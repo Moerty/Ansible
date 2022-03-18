@@ -1,0 +1,40 @@
+---
+- name: Create Ansible user
+  hosts: testubuntu1
+  remote_user: itadmin
+  become: true
+  tasks:
+
+  - name: Create Ansible group
+    group:
+      name: ansible
+      gid: 20000
+      state: present
+
+  - name: Create user Ansible
+    user:
+      name: ansible
+      createhome: yes
+      uid: 20000
+      group: ansible
+      state: present
+
+  - name: Copy SSH key
+    authorized_key:
+      user: ansible
+      key: "{{ lookup('file', './ssh/id_rsa.pub') }}"
+      key_options: 'no-port-forwarding'
+
+  - name: Install Sudo
+    package:
+      name: sudo
+      state: present
+
+  - name: Add ansible user to sudoers
+    copy:
+      dest: /etc/sudoers.d/ansible
+      content: 'ansible ALL= NOPASSWD: ALL'
+      owner: root
+      group: root
+      mode: 0500
+
