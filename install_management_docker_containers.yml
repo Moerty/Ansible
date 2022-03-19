@@ -1,0 +1,87 @@
+---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/install_management.yml
+  tasks:
+
+    - name : deploy portainer
+      community.docker.docker_container:
+        name: portainer
+        image: portainer/portainer-ce
+        ports:
+          - "9000:9000"
+          - "8000:8000"
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock
+          - portainer_data:/data
+        restart_policy: unless-stopped
+
+    - name: Deploy Watchtower
+      community.docker.docker_container:
+        name: watchtower
+        image: containrrr/watchtower
+        command: --schedule "0 0 4 * * *"
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock
+        restart_policy: unless-stopped
+
+    - name: create nginx network
+      community.general.docker_network:
+        name: proxy
+
+    - name: create nginx config dir
+      file: path=/etc/nginx/conf.d state=directory
+
+    - name: copy nginx buffer config to docker host
+      copy:
+        src: nginx_conf/client_body_size.conf
+        dest: /etc/nginx/conf.d/client_body_size.conf
+
+    - name: deploy nginx server
+      community.docker.docker_container:
+        image: jwilder/nginx-proxy
+        name: nginx-proxy
+        volumes:
+          - conf:/etc/nginx/conf.d
+          - vhost:/etc/nginx/vhost.d
+          - dhparam:/etc/nginx/dhparam
+          - certs:/etc/nginx/certs:ro
+          - html:/usr/share/nginx/html
+          - /var/run/docker.sock:/tmp/docker.sock:ro
+          - /etc/nginx/conf.d/client_body_size.conf:/etc/nginx/conf.d/client_body_size.conf
+        restart_policy: unless-stopped
+        ports:
+          - "80:80"
+          - "443:443"
+        networks:
+          - name: proxy
+
+    - name: deploy nginx letsencrypt server
+      community.docker.docker_container:
+        image: jrcs/letsencrypt-nginx-proxy-companion
+        name: nginx-proxy-le
+        volumes:
+          - certs:/etc/nginx/certs:rw
+          - conf:/etc/nginx/conf.d:rw
+          - dhparam:/etc/nginx/dhparam:rw
+          - vhost:/etc/nginx/vhost.d:rw
+          - html:/usr/share/nginx/html:rw
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+          - name: proxy
+        env:
+          NGINX_PROXY_CONTAINER: "nginx-proxy"
+        restart_policy: unless-stopped
+
+    - name: create main domain nginx server
+      community.docker.docker_container:
+        image: nginx
+        name: main_domain_empty
+        env:
+          VIRTUAL_HOST: "{{MAIN_DOMAIN}}"
+          LETSENCRYPT_HOST: "{{MAIN_DOMAIN}}"
+          LETSENCRYPT_EMAIL: "{{POSTMASTER_MAIL}}"
+        networks:
+          - name: proxy
+        restart_policy: unless-stopped
