@@ -1,1 +1,2 @@
-testubuntu1 ansible_host=192.168.0.44
+netcup ansible_host=45.132.246.196
+
